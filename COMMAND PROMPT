@@ -1,6 +1,7 @@
 1. SHOW CON_NAME;   
 result      CDB$ROOT
 2. ALTER SESSION SET CONTAINER = FREEPDB1;
+              ------CONNECT USER NAME IF USER IS CREATED IN FREEPDB1 DATABASE.-----
 3.SELECT username, account_status
   FROM dba_users
   WHERE username = 'AMIR';
