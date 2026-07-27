@@ -1,1 +1,11 @@
-
+1. 	CMD
+	C:\Users\Administrator> sqlplus / as sysdba
+2.	(OPTIONAL) SELECT log_mode FROM v$database;    ---NOARCHIVELOG---
+3.	SHUTDOWN IMMEDIATE;
+4.	STARTUP MOUNT;
+5.	ALTER DATABASE ARCHIVELOG;
+6.	ALTER DATABASE OPEN;
+7.	(OPTIONAL) SELECT log_mode FROM v$database; ---CONFIRM IF ARCHIVELOG---
+8.	EXIT;
+9.	rman target /
+10.	BACKUP DATABASE PLUS ARCHIVELOG;
