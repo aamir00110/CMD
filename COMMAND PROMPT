@@ -1,3 +1,7 @@
+Connect Database with CMD (sys) 
+    i    show pdbs
+          all pdbs show in below
+
 1. SHOW CON_NAME;   
 result      CDB$ROOT
 2. ALTER SESSION SET CONTAINER = FREEPDB1;
