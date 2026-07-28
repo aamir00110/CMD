@@ -9,7 +9,8 @@
 8.	EXIT;
 9.	rman target /
 10.	BACKUP DATABASE PLUS ARCHIVELOG;
-
+	----Backup Pluggable Database----
+11.	backup pluggable database posdb;
 
 
 -------------------------------------------------STRUCTRE OF MY DATABASE------------------------------------------------
