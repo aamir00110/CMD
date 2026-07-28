@@ -1,0 +1,23 @@
+1. Open CMD
+2. SHOW CON_NAME; ----RESULT--- CDB$ROOT;
+3. ALTER SESSION SET CONTAINER = CDB$ROOT;
+4. CREATE PLUGGABLE DATABASE POSDB
+  ADMIN USER POSADMIN IDENTIFIED BY "PosAdmin@123"
+  FILE_NAME_CONVERT = (
+    'C:\26_26\APP\ADMINISTRATOR\PRODUCT\26AI\ORADATA\FREE\PDBSEED\',
+    'C:\26_26\APP\ADMINISTRATOR\PRODUCT\26AI\ORADATA\FREE\POSDB\'
+      );
+5. SHOW PDBS;  -----------RESUTL 
+      CON_ID CON_NAME                       OPEN MODE  RESTRICTED
+    ------ ------------------------------ ---------- ----------
+         2 PDB$SEED                       READ ONLY  NO
+         3 FREEPDB1                       READ WRITE NO
+         4 POSDB                          MOUNTED
+6.  ALTER PLUGGABLE DATABASE POSDB OPEN;
+7.  SHOW PDBS;  -----------RESUTL
+            CON_ID CON_NAME                       OPEN MODE  RESTRICTED
+    ---- ------------------------------ ---------- ----------
+         2 PDB$SEED                       READ ONLY  NO
+         3 FREEPDB1                       READ WRITE NO
+         4 POSDB                          READ WRITE NO
+    
