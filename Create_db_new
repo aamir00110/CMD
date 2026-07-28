@@ -21,3 +21,4 @@
          3 FREEPDB1                       READ WRITE NO
          4 POSDB                          READ WRITE NO
     
+8.    ALTER PLUGGABLE DATABASE POSDB SAVE STATE;    -----DATA BASE RESTART KAY BAD BI OPEN HU JAYE---
