@@ -20,5 +20,11 @@
 
             ---------------ORDS restart-------------
 8.  cd C:\26_26\ords\bin
+            .\ords --config C:\26_26\ords\config serve
 
-.\ords --config C:\26_26\ords\config serve
+                        -----------------------------------update admin password or oracle apex with new DB--------------------
+                        1. PowerShell mein SQL*Plus start karein
+                                   i.   cd C:\26_26\apex\apex
+                                   ii.  sqlplus / as sysdba
+                                   iii.  ALTER SESSION SET CONTAINER = HRDB;
+                                    iv.  @apxchpwd.sql
