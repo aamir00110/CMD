@@ -17,3 +17,8 @@
     ---Aap ke ORDS config mein pehle se CDB/PDB connections hain.---
 7.  cd C:\26_26\ords\bin
     .\ords --config C:\26_26\ords\config config list
+
+            ---------------ORDS restart-------------
+8.  cd C:\26_26\ords\bin
+
+.\ords --config C:\26_26\ords\config serve
