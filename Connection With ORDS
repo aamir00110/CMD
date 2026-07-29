@@ -1,1 +1,5 @@
-
+1.   Open ORDS Folder click right clik and open power shell or cmd
+Next
+2.   PS C:\26_26\ords\bin>   ----path of ords in cmd
+3.   .\ords --config C:\26_26\ords\config install
+4.   
