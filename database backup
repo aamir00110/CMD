@@ -19,5 +19,11 @@
 					Type	Name		Status
 					CDB		FREE		Main Database
 					PDB		PDB$SEED	READ ONLY (Oracle ka template, isay use nahi karte)
-					PDB		FREEPDB1	READ WRITE
-					PDB		POSDB		READ WRITE
+					PDB		FREEPDB1	READ WRITE 
+					PDB		POSDB		mounted  ---if mounted--the 13.
+
+13.		rman target /
+14.		RECOVER PLUGGABLE DATABASE POSDB;
+15.		sqlplus / as sysdba
+16.		ALTER SESSION SET CONTAINER=POSDB;
+17.		ALTER PLUGGABLE DATABASE POSDB OPEN;
