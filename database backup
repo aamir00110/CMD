@@ -2,7 +2,7 @@
 	C:\Users\Administrator> sqlplus / as sysdba
 2.	(OPTIONAL) SELECT log_mode FROM v$database;    ---NOARCHIVELOG---
 3.	SHUTDOWN IMMEDIATE;
-4.	STARTUP MOUNT;
+4.	STARTUP;
 5.	ALTER DATABASE ARCHIVELOG;
 6.	ALTER DATABASE OPEN;
 7.	(OPTIONAL) SELECT log_mode FROM v$database; ---CONFIRM IF ARCHIVELOG---
