@@ -1,10 +1,29 @@
 	1	SELECT NAME,OPEN_MODE,LOG_MODE FROM V$DATABASE;	    Verify DB	Success
-	2	CONFIGURE CONTROLFILE AUTOBACKUP ON;	              Enable autobackup	Success
-	3	BACKUP DATABASE PLUS ARCHIVELOG;	                  Full backup	Success
-	4	LIST BACKUP SUMMARY;	                              View backups	Success
-	5	VALIDATE DATABASE;	                                Validate	Success
-	6	SHUTDOWN IMMEDIATE; STARTUP MOUNT;	                Prepare restore	Success
-	7	RESTORE DATABASE;	                                  Restore files	Success
-	8	RECOVER DATABASE;	                                  Apply redo	Success
-	9	ALTER DATABASE OPEN;	                              Open DB	Success
-				
+	2	Full Backup!
+					Definition:
+					A Full Backup copies all data in the database, regardless of previous backups.
+					Every backup contains the complete database.
+		Advantages
+					Fastest restore.
+					Easy to manage.
+					Only one backup is needed to restore.
+		Disadvantages
+					Takes the most storage.
+					Backup takes longer.
+
+	3	Differential Backup
+					A Differential Backup stores all changes since the last Full Backup.
+		Advantages
+					Faster restore than incremental.
+					Easier management.
+		Disadvantages
+					Differential backups grow larger each day.
+	4	Incremental Backup
+					An Incremental Backup stores only changes since the previous backup (whether full or incremental).
+		Advantages
+					Smallest backup size.
+					Fastest backup operation.
+					Saves storage space.
+		Disadvantages
+				Restore is slower because all incremental backups must be applied in sequence.
+	
