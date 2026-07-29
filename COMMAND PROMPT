@@ -1,23 +1,2 @@
-Connect Database with CMD (sys) 
-    i    show pdbs
-          all pdbs show in below
-
-1. SHOW CON_NAME;   
-result      CDB$ROOT
-2. ALTER SESSION SET CONTAINER = FREEPDB1;
-              ------CONNECT USER NAME IF USER IS CREATED IN FREEPDB1 DATABASE.-----
-3.SELECT username, account_status
-  FROM dba_users
-  WHERE username = 'AMIR';
-4. GRANT CREATE TABLE TO amir;
-5. GRANT UNLIMITED TABLESPACE TO amir;
-6. GRANT CREATE SESSION, CREATE TABLE TO amir;
-7. GRANT UNLIMITED TABLESPACE TO amir;
-
-8. CREATE TABLE RIGHT GRANT TO AMIR AND TABLE SPACE RIGHTS
-
-
-
-
 ipconfig.
 tnsping DatabaseName.
