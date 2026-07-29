@@ -12,7 +12,8 @@
 	----Backup Pluggable Database----
 11.	backup pluggable database posdb;
 
-
+		-----------IF PBDS IN MOUNT STATE-----
+12.    ALTER PLUGGABLE DATABASE FREEPDB1 OPEN;
 -------------------------------------------------STRUCTRE OF MY DATABASE------------------------------------------------
 
 					Type	Name		Status
