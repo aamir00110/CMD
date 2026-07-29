@@ -1,3 +1,9 @@
+
+	RMAN> list backup of database summary;
+	exit; RMAN
+	CONNECT WITH DATABASE SQLPLUS / AS SYSDBA
+	
+
 	1	SELECT NAME,OPEN_MODE,LOG_MODE FROM V$DATABASE;	    Verify DB	Success
 	2	Full Backup!
 					Definition:
