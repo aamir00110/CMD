@@ -1,5 +1,19 @@
-1.   Open ORDS Folder click right clik and open power shell or cmd
-Next
-2.   PS C:\26_26\ords\bin>   ----path of ords in cmd
-3.   .\ords --config C:\26_26\ords\config install
-4.   
+1. CMD
+2. CONNECT WITH SYSDBA
+3. SHOW PDBS;   
+            ---IF PLUGGABLE DB IN MOUNT STATE THEN RUN BELOW---
+                 I. ALTER PLUGGABLE DATABASE HRDB OPEN;
+                 II. ALTER PLUGGABLE DATABASE HRDB SAVE STATE;
+4.ALTER SESSION SET CONTAINER=HRDB;
+5.SHOW CON_NAME   ---RESULT= HRDB;
+
+
+      -------APEX HRDB mein install/configure karein-----
+    Check karein APEX already available hai ya nahi:
+      SELECT VERSION_NO 
+      FROM APEX_RELEASE;
+6.  APEX Public User unlock karein
+
+    ---Aap ke ORDS config mein pehle se CDB/PDB connections hain.---
+7.  cd C:\26_26\ords\bin
+    .\ords --config C:\26_26\ords\config config list
