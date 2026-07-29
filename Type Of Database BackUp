@@ -1,5 +1,5 @@
 
-	RMAN> list backup of database summary;
+	RMAN>  LIST BACKUP SUMMARY;
 	exit; RMAN
 	CONNECT WITH DATABASE SQLPLUS / AS SYSDBA
 	
