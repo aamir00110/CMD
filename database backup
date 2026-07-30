@@ -22,7 +22,10 @@
 					PDB		POSDB		mounted  ---if mounted--the 13.
 
 13.		rman target /
-14.		RECOVER PLUGGABLE DATABASE POSDB;
+14.		i. 		RESTORE DATABASE; 		---rman---
+		ii.		RECOVER DATABASE; 		---rman
+		iii.	ALTER DATABASE OPEN;  	---sql---
+15.		RECOVER PLUGGABLE DATABASE POSDB;
 15.		sqlplus / as sysdba
 16.		ALTER SESSION SET CONTAINER=POSDB;
 17.		ALTER PLUGGABLE DATABASE POSDB OPEN;
