@@ -1,0 +1,939 @@
+================================================================================
+ORACLE 26AI PLUGGABLE DATABASE RECOVERY - COMMAND REFERENCE
+================================================================================
+
+Version: 1.0
+Date: January 2024
+Database: Oracle 26AI
+Recovery Types: Full Database, PITR, Datafile, Tablespace, Archivelog Setup
+
+================================================================================
+1. FULL DATABASE RECOVERY (مکمل ڈیٹا بیس ری کوری)
+================================================================================
+
+SCENARIO: Complete database loss or severe corruption requiring full recovery
+
+>>> STEP 1: CHECK DATABASE STATUS <<<
+
+$ sqlplus / as sysdba
+SQL> SELECT NAME, OPEN_MODE, LOG_MODE, ARCHIVELOG FROM V$DATABASE;
+
+OUTPUT SHOULD SHOW:
+- NAME: Your database name
+- OPEN_MODE: Current state (READ WRITE, MOUNTED, etc.)
+- LOG_MODE: ARCHIVELOG or NOARCHIVELOG
+- ARCHIVELOG: YES or NO
+
+DETAILED CHECKS:
+SQL> SELECT GROUP#, THREAD#, SEQUENCE#, ARCHIVED, STATUS FROM V$LOG ORDER BY GROUP#;
+This shows redo log status and archived flags
+
+SQL> SELECT * FROM V$BACKUP;
+Check if any datafiles are in backup mode
+
+SQL> SELECT SEQUENCE#, FIRST_TIME, COMPLETION_TIME FROM V$ARCHIVED_LOG 
+     ORDER BY SEQUENCE# DESC FETCH FIRST 10 ROWS ONLY;
+Lists last 10 archive logs
+
+>>> STEP 2: TAKE DATABASE OFFLINE <<<
+
+SQL> SHUTDOWN ABORT;
+Immediate shutdown (use ABORT only when database is damaged)
+
+VERIFY SHUTDOWN:
+SQL> SELECT INSTANCE_NAME, STATUS FROM V$INSTANCE;
+Should return no rows (instance down)
+
+>>> STEP 3: START RMAN <<<
+
+$ export ORACLE_SID=pdb_name
+$ export ORACLE_HOME=/u01/oracle/product/26.0
+$ export PATH=$ORACLE_HOME/bin:$PATH
+
+$ rman target / 
+RMAN> CONNECT TARGET sys/password@pdb_name
+RMAN> CONNECT CATALOG rman_user/password@catalog_db
+
+NOTE: If no catalog database:
+$ rman target /
+RMAN> SHOW ALL;
+This shows current RMAN configuration
+
+>>> STEP 4: RESTORE & RECOVER <<<
+
+METHOD A - SIMPLE RECOVERY (No point-in-time):
+RMAN> STARTUP MOUNT;
+Starts database in mount mode (opens control file but not datafiles)
+
+RMAN> RESTORE DATABASE;
+Restores all datafiles from backup pieces
+
+RMAN> RECOVER DATABASE;
+Applies archive logs to recovered datafiles
+
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+Opens database and resets logs for new backup cycle
+
+METHOD B - WITH VALIDATION:
+RMAN> STARTUP MOUNT;
+RMAN> RESTORE DATABASE VALIDATE;
+Tests restore without writing datafiles (dry run)
+
+RMAN> RESTORE DATABASE;
+RMAN> RECOVER DATABASE;
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+
+METHOD C - RECOVERY WITH ARCHIVE LOG LOCATION:
+If archive logs are in non-standard location:
+
+RMAN> SET ARCHIVELOG DESTINATION = '/custom/archive/path';
+RMAN> STARTUP MOUNT;
+RMAN> RESTORE DATABASE;
+RMAN> RECOVER DATABASE;
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+
+>>> STEP 5: VERIFY RECOVERY <<<
+
+SQL> SELECT NAME, OPEN_MODE, DATABASE_ROLE, PROTECTION_MODE FROM V$DATABASE;
+Should show: OPEN, PRIMARY, MAXIMUM PERFORMANCE
+
+SQL> SELECT FILE#, NAME, STATUS, BYTES/1024/1024 AS SIZE_MB FROM V$DATAFILE ORDER BY FILE#;
+All datafiles should show status AVAILABLE
+
+SQL> SELECT COUNT(*) AS TOTAL_ARCHIVE_LOGS FROM V$ARCHIVED_LOG;
+Check that archive logs are registered
+
+SQL> SELECT OBJECT_TYPE, COUNT(*) FROM DBA_OBJECTS WHERE STATUS = 'INVALID' GROUP BY OBJECT_TYPE;
+Should return no rows (no invalid objects)
+
+SQL> ALTER SYSTEM SWITCH LOGFILE;
+Verify new redo log generation works
+
+================================================================================
+2. POINT-IN-TIME RECOVERY - PITR (وقت کے حساب سے ری کوری)
+================================================================================
+
+SCENARIO: Need to recover to moment before accidental data deletion
+
+>>> STEP 1: FIND TARGET RECOVERY POINT <<<
+
+OPTION A - FIND TIME OF DELETION:
+
+SQL> SELECT * FROM DBA_AUDIT_TRAIL 
+     WHERE ACTION_NAME IN ('DELETE', 'DROP')
+     AND TIMESTAMP >= TRUNC(SYSDATE)
+     ORDER BY TIMESTAMP DESC;
+
+Example output:
+TIMESTAMP: 2024-01-15 14:30:45
+ACTION_NAME: DELETE
+OBJ_NAME: EMPLOYEES
+
+So recover to: 2024-01-15 14:15:00 (15 minutes before deletion)
+
+OPTION B - FIND SCN (System Change Number):
+
+SQL> SELECT CHANGE#, TIME_DP FROM V$LOG_HISTORY 
+     WHERE TRUNC(TIME_DP) = TRUNC(SYSDATE)
+     ORDER BY CHANGE# DESC;
+
+Example output:
+CHANGE# TIME_DP
+12345678 2024-01-15 14:30:00
+12340000 2024-01-15 14:00:00
+
+Choose SCN from before issue: 12340000
+
+OPTION C - FIND LOG SEQUENCE:
+
+SQL> SELECT SEQUENCE#, FIRST_TIME, NEXT_TIME, ARCHIVED FROM V$LOG ORDER BY SEQUENCE# DESC;
+
+Example output:
+SEQUENCE# FIRST_TIME          NEXT_TIME
+5432      2024-01-15 14:00    2024-01-15 14:30
+5431      2024-01-15 13:30    2024-01-15 14:00
+
+Use sequence before issue: 5431
+
+>>> STEP 2: START RMAN <<<
+
+$ rman target /
+RMAN> STARTUP MOUNT;
+
+>>> STEP 3: SET RECOVERY TARGET <<<
+
+METHOD A - BY TIMESTAMP:
+
+RMAN> SET UNTIL TIME "to_date('2024-01-15 14:15:00','YYYY-MM-DD HH24:MI:SS')";
+
+METHOD B - BY SCN:
+
+RMAN> SET UNTIL SCN = 12340000;
+
+METHOD C - BY LOG SEQUENCE:
+
+RMAN> SET UNTIL SEQUENCE 5431 THREAD 1;
+
+METHOD D - BY CANCEL (recover until manual stop):
+
+RMAN> RECOVER DATABASE UNTIL CANCEL;
+(Type 'CANCEL' when enough logs applied)
+
+>>> STEP 4: RESTORE & RECOVER <<<
+
+RMAN> RESTORE DATABASE;
+Downloads all datafiles from backup
+
+RMAN> RECOVER DATABASE;
+Applies logs up to SET UNTIL point
+
+Watch for messages like:
+"Media recovery complete."
+"Automatic archival disabled"
+
+>>> STEP 5: OPEN WITH RESETLOGS <<<
+
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+
+This opens database at recovery point
+RESETLOGS = reset internal sequence numbers
+
+>>> STEP 6: VERIFY RECOVERED DATA <<<
+
+SQL> SELECT COUNT(*) FROM recovered_table;
+Verify deleted rows are back
+
+SQL> SELECT MAX(CREATED_DATE) FROM employees;
+Check latest record timestamp
+
+SQL> SELECT * FROM V$LOG_HISTORY WHERE ROWNUM < 10 ORDER BY CHANGE# DESC;
+Verify recovery logs
+
+>>> STEP 7: CHECK REDO LOGS <<<
+
+SQL> SELECT GROUP#, STATUS, ARCHIVED FROM V$LOG;
+All should show CLEARING or UNUSED after RESETLOGS
+
+SQL> ALTER SYSTEM SWITCH LOGFILE;
+Force log switch to test archiving
+
+================================================================================
+3. DATAFILE RECOVERY (ڈیٹا فائل ری کوری)
+================================================================================
+
+SCENARIO: One or more datafiles corrupted, database partially down
+
+>>> STEP 1: IDENTIFY FAILED DATAFILES <<<
+
+SQL> SELECT FILE#, NAME, STATUS, ENABLED, BYTES/1024/1024 AS SIZE_MB 
+     FROM V$DATAFILE 
+     WHERE STATUS != 'AVAILABLE' 
+     ORDER BY FILE#;
+
+Example output:
+FILE# NAME                           STATUS    ENABLED    SIZE_MB
+  4   /u01/oradata/users01.dbf       OFFLINE   NO        100
+  7   /u01/oradata/temp01.dbf        OFFLINE   YES       500
+
+Check alert log for details:
+$ tail -100 $ORACLE_BASE/diag/rdbms/*/*/trace/alert_*.log | grep -i datafile
+
+>>> STEP 2: DATAFILE-LEVEL RECOVERY OPTIONS <<<
+
+OPTION A - ONLINE RECOVERY (Database Stays Open):
+
+Start RMAN:
+$ rman target /
+
+RMAN> RECOVER DATAFILE 4, 7, 9;
+Recovers 3 datafiles without shutdown
+
+Specify tablespace if preferred:
+RMAN> RECOVER DATAFILE 4;  -- Users tablespace
+RMAN> RECOVER DATAFILE 7;  -- Temp tablespace
+
+Benefits: No downtime, minimal impact
+
+OPTION B - OFFLINE RECOVERY (Single Datafile):
+
+$ rman target /
+RMAN> SHUTDOWN IMMEDIATE;
+
+RMAN> STARTUP MOUNT;
+
+RMAN> RESTORE DATAFILE 4;
+RMAN> RECOVER DATAFILE 4;
+
+RMAN> ALTER DATABASE OPEN;
+
+Use this for specific corrupted file
+
+OPTION C - FULL OFFLINE RECOVERY:
+
+SQL> SHUTDOWN IMMEDIATE;
+
+$ rman target /
+RMAN> STARTUP MOUNT;
+
+RMAN> RESTORE DATABASE;
+RMAN> RECOVER DATABASE;
+
+RMAN> ALTER DATABASE OPEN;
+
+Use for multiple critical datafiles
+
+OPTION D - BY TABLESPACE:
+
+RMAN> RECOVER TABLESPACE users;
+RMAN> RECOVER TABLESPACE temp;
+RMAN> RECOVER TABLESPACE undo;
+
+>>> STEP 3: VERIFY RECOVERY <<<
+
+SQL> SELECT FILE#, NAME, STATUS FROM V$DATAFILE ORDER BY FILE#;
+All should show AVAILABLE
+
+SQL> SELECT COUNT(*) FROM users_table;
+Data access test
+
+SQL> ANALYZE TABLE users_table COMPUTE STATISTICS;
+Update statistics
+
+SQL> ALTER SYSTEM SWITCH LOGFILE;
+Test normal operations
+
+>>> STEP 4: CHECK FOR BLOCK CORRUPTION <<<
+
+SQL> SELECT FILE#, BLOCK# FROM V$DATABASE_BLOCK_CORRUPTION;
+Should return no rows (no corrupted blocks)
+
+SQL> BEGIN
+     DBMS_REPAIR.CHECK_OBJECT(
+       schema_name => 'USERS',
+       object_name => 'EMPLOYEES',
+       object_type => DBMS_REPAIR.TABLE_OBJECT
+     );
+    END;
+    /
+
+================================================================================
+4. TABLESPACE RECOVERY (ٹیبل اسپیس ری کوری)
+================================================================================
+
+SCENARIO: Entire tablespace offline/corrupted, need selective recovery
+
+>>> STEP 1: IDENTIFY TABLESPACE STATUS <<<
+
+SQL> SELECT TABLESPACE_NAME, STATUS, EXTENT_MANAGEMENT 
+     FROM DBA_TABLESPACES 
+     ORDER BY TABLESPACE_NAME;
+
+Example output:
+TABLESPACE_NAME   STATUS    EXTENT_MANAGEMENT
+SYSTEM            ONLINE    LOCAL
+SYSAUX            ONLINE    LOCAL
+USERS             OFFLINE   LOCAL
+TEMP              ONLINE    LOCAL
+UNDO              ONLINE    LOCAL
+
+Find problematic tablespace (status = OFFLINE)
+
+SQL> SELECT FILE#, FILE_NAME, TABLESPACE_NAME, STATUS 
+     FROM DBA_DATA_FILES 
+     WHERE TABLESPACE_NAME = 'USERS'
+     ORDER BY FILE#;
+
+Shows all datafiles in users tablespace
+
+>>> STEP 2: OFFLINE TABLESPACE (Safely) <<<
+
+If partially available:
+SQL> ALTER TABLESPACE users OFFLINE;
+Normal offline with checkpoint
+
+If corrupted/inaccessible:
+SQL> ALTER TABLESPACE users OFFLINE IMMEDIATE;
+Immediate offline without checkpoint (can lose data in redo)
+
+Verify:
+SQL> SELECT TABLESPACE_NAME, STATUS FROM DBA_TABLESPACES WHERE TABLESPACE_NAME = 'USERS';
+Should show OFFLINE
+
+>>> STEP 3: RESTORE & RECOVER <<<
+
+Start RMAN:
+$ rman target /
+
+Option A - Recover tablespace completely:
+RMAN> RECOVER TABLESPACE users;
+
+Option B - Recover multiple tablespaces:
+RMAN> RECOVER TABLESPACE users, temp, undo;
+
+Option C - With advanced options:
+RMAN> RECOVER TABLESPACE users UNTIL CANCEL;
+Then manually type CANCEL when done
+
+>>> STEP 4: BRING TABLESPACE ONLINE <<<
+
+SQL> ALTER TABLESPACE users ONLINE;
+
+Verify:
+SQL> SELECT TABLESPACE_NAME, STATUS FROM DBA_TABLESPACES WHERE TABLESPACE_NAME = 'USERS';
+Should show ONLINE
+
+>>> STEP 5: VALIDATE DATA <<<
+
+SQL> SELECT COUNT(*) FROM users.table_name;
+Basic row count
+
+SQL> SELECT SUM(column1) FROM users.table_name;
+Aggregate validation
+
+SQL> ANALYZE TABLE users.table_name COMPUTE STATISTICS;
+Update table statistics
+
+SQL> SELECT TABLESPACE_NAME, SUM(BYTES)/1024/1024 AS FREE_MB 
+     FROM DBA_FREE_SPACE 
+     WHERE TABLESPACE_NAME = 'USERS' 
+     GROUP BY TABLESPACE_NAME;
+Check available space
+
+================================================================================
+5. ARCHIVELOG MODE SETUP (آرکائیو لاگ سیٹ اپ)
+================================================================================
+
+REQUIREMENT: Must have archivelog enabled for PITR, backups, data guard
+
+>>> STEP 1: CHECK CURRENT MODE <<<
+
+SQL> SELECT NAME, LOG_MODE, ARCHIVELOG FROM V$DATABASE;
+
+Expected output:
+NAME      LOG_MODE      ARCHIVELOG
+PROD_DB   NOARCHIVELOG  NO
+
+If already showing ARCHIVELOG mode, skip to configuration step
+
+>>> STEP 2: PLAN ARCHIVE DESTINATION <<<
+
+Check available space:
+$ df -h /u01/archive_logs
+
+Create directory if needed:
+$ mkdir -p /u01/archive_logs
+$ chown oracle:dba /u01/archive_logs
+$ chmod 750 /u01/archive_logs
+
+For production, use separate mount point:
+$ mkdir -p /archive01/db_name
+$ mount /dev/sdb1 /archive01
+
+>>> STEP 3: ENABLE ARCHIVELOG MODE <<<
+
+$ sqlplus / as sysdba
+
+SQL> SHUTDOWN IMMEDIATE;
+Clean shutdown required
+
+SQL> STARTUP MOUNT;
+Start in mount mode
+
+SQL> ALTER DATABASE ARCHIVELOG;
+Enable archivelog (takes few seconds)
+
+SQL> ALTER DATABASE OPEN;
+Open database (archive mode now active)
+
+Verify:
+SQL> SELECT NAME, LOG_MODE, ARCHIVELOG FROM V$DATABASE;
+Should now show: ARCHIVELOG | YES
+
+>>> STEP 4: CONFIGURE ARCHIVE DESTINATION <<<
+
+Set primary archive location:
+SQL> ALTER SYSTEM SET LOG_ARCHIVE_DEST_1=
+    'LOCATION=/u01/archive_logs VALID_FOR=(ALL_LOGFILES,ALL_ROLES) 
+     DB_UNIQUE_NAME=prod_db' SCOPE=BOTH;
+
+Set archive filename format (optional but recommended):
+SQL> ALTER SYSTEM SET LOG_ARCHIVE_FORMAT='%t_%s_%r.dbf' SCOPE=BOTH;
+
+Meanings:
+%t = Thread number
+%s = Log sequence number  
+%r = Resetlogs ID
+
+Example: "1_5432_876543.dbf"
+
+Set archive lag (force archive every N seconds):
+SQL> ALTER SYSTEM SET ARCHIVE_LAG_TARGET=600 SCOPE=BOTH;
+Archives redo logs every 10 minutes
+
+Verify settings:
+SQL> SHOW PARAMETER LOG_ARCHIVE;
+Should display configured parameters
+
+>>> STEP 5: START ARCHIVER PROCESS <<<
+
+SQL> ALTER SYSTEM ARCHIVE LOG ALL;
+Forces archive of current redo
+
+SQL> SELECT * FROM V$ARCHIVE_PROCESSES;
+Check archiver process status
+
+Monitor archive activity:
+SQL> SELECT GROUP#, SEQUENCE#, ARCHIVED, STATUS 
+     FROM V$LOG 
+     ORDER BY GROUP#;
+
+Force log switch to test:
+SQL> ALTER SYSTEM SWITCH LOGFILE;
+
+Check if new archive created:
+$ ls -la /u01/archive_logs/
+Should see new .dbf files
+
+>>> STEP 6: OPTIONAL - SECONDARY ARCHIVE DEST <<<
+
+For high availability (Data Guard):
+SQL> ALTER SYSTEM SET LOG_ARCHIVE_DEST_2=
+    'SERVICE=standby_db VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE)' 
+    SCOPE=BOTH;
+
+Check destination status:
+SQL> SELECT DEST_NAME, DESTINATION, STATUS, ERROR 
+     FROM V$ARCHIVE_DEST_STATUS;
+
+>>> STEP 7: VERIFY ARCHIVE OPERATION <<<
+
+Check archive log generation rate:
+SQL> SELECT TRUNC(FIRST_TIME) AS DAY, COUNT(*) AS LOGS_PER_DAY 
+     FROM V$ARCHIVED_LOG 
+     GROUP BY TRUNC(FIRST_TIME) 
+     ORDER BY TRUNC(FIRST_TIME) DESC;
+
+Check daily archive volume:
+SELECT COUNT(*) FROM V$ARCHIVED_LOG 
+WHERE FIRST_TIME >= TRUNC(SYSDATE);
+
+================================================================================
+6. RMAN BACKUP STRATEGY (RMAN بیک اپ کی حکمت عملی)
+================================================================================
+
+>>> STEP 1: INITIAL RMAN SETUP <<<
+
+$ rman target /
+
+Configure backup device (disk):
+RMAN> CONFIGURE CHANNEL DEVICE TYPE DISK 
+      FORMAT '/u01/rman_backup/%d_%I_%T_%s.bkp';
+
+Format explanation:
+%d = Database name
+%I = DBID
+%T = Date stamp (yyyymmdd_hhmmss)
+%s = Backup set number
+
+Enable controlfile autobackup:
+RMAN> CONFIGURE CONTROLFILE AUTOBACKUP ON;
+RMAN> CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK 
+      TO '/u01/rman_backup/ctl_%d_%T.bkp';
+
+Set retention policy (30 days):
+RMAN> CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 30 DAYS;
+
+Set default device type:
+RMAN> CONFIGURE DEFAULT DEVICE TYPE TO DISK;
+
+Show all configuration:
+RMAN> SHOW ALL;
+
+>>> STEP 2: FULL DATABASE BACKUP <<<
+
+Basic full backup:
+RMAN> BACKUP DATABASE;
+
+Full backup with archive logs:
+RMAN> BACKUP DATABASE PLUS ARCHIVELOG;
+
+Full backup with parallel channels (faster):
+RMAN> RUN {
+  ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;
+  ALLOCATE CHANNEL ch2 DEVICE TYPE DISK;
+  ALLOCATE CHANNEL ch3 DEVICE TYPE DISK;
+  
+  BACKUP DATABASE PLUS ARCHIVELOG;
+  
+  RELEASE CHANNEL ch1;
+  RELEASE CHANNEL ch2;
+  RELEASE CHANNEL ch3;
+}
+
+Backup with compression (if licensed):
+RMAN> BACKUP AS COMPRESSED BACKUPSET DATABASE PLUS ARCHIVELOG;
+
+>>> STEP 3: INCREMENTAL BACKUP STRATEGY <<<
+
+Level 0 (full backup - baseline):
+RMAN> BACKUP INCREMENTAL LEVEL 0 DATABASE;
+Run weekly (Sunday)
+
+Level 1 (cumulative - all changes since L0):
+RMAN> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE;
+Run daily Mon-Sat
+
+Or Level 1 (differential - changes since L0 or L1):
+RMAN> BACKUP INCREMENTAL LEVEL 1 DATABASE;
+Smaller but need all in recovery
+
+>>> STEP 4: ARCHIVE LOG ONLY BACKUP <<<
+
+RMAN> BACKUP ARCHIVELOG ALL;
+Backup only archive logs
+
+With deletion:
+RMAN> BACKUP ARCHIVELOG ALL DELETE INPUT;
+Removes arch logs after backup
+
+From specific sequence:
+RMAN> BACKUP ARCHIVELOG FROM SEQUENCE 1234 UNTIL SEQUENCE 5678;
+
+>>> STEP 5: VERIFY BACKUPS <<<
+
+List all backups:
+RMAN> LIST BACKUP SUMMARY;
+
+Shows backup summary by date/type
+
+List backups of database:
+RMAN> LIST BACKUP OF DATABASE;
+
+List archive log backups:
+RMAN> LIST BACKUP OF ARCHIVELOG ALL;
+
+List obsolete backups (retention policy):
+RMAN> LIST OBSOLETE;
+
+>>> STEP 6: VALIDATE BACKUPS <<<
+
+Validate syntax and checksum:
+RMAN> VALIDATE BACKUP;
+
+Validate specific backup:
+RMAN> VALIDATE BACKUP OF DATABASE;
+
+Test restore (dry run, no writing):
+RMAN> RESTORE DATABASE VALIDATE;
+
+Restore and verify all blocks:
+RMAN> RESTORE DATABASE VALIDATE HEADER;
+
+>>> STEP 7: DELETE OBSOLETE BACKUPS <<<
+
+Show what will be deleted:
+RMAN> REPORT OBSOLETE;
+
+Delete all obsolete backups:
+RMAN> DELETE OBSOLETE;
+
+Delete backups older than 30 days:
+RMAN> DELETE BACKUPSET COMPLETED BEFORE 'SYSDATE-30';
+
+>>> STEP 8: AUTOMATED BACKUP SCRIPT <<<
+
+Create script: /home/oracle/run_backup.sh
+
+#!/bin/bash
+ORACLE_SID=prod_db
+ORACLE_HOME=/u01/oracle/product/26.0
+export ORACLE_SID ORACLE_HOME
+PATH=$ORACLE_HOME/bin:$PATH
+
+rman target / << EOF
+RUN {
+  ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+  ALLOCATE CHANNEL c2 DEVICE TYPE DISK;
+  
+  BACKUP DATABASE PLUS ARCHIVELOG;
+  
+  RELEASE CHANNEL c1;
+  RELEASE CHANNEL c2;
+}
+EXIT;
+EOF
+
+Schedule via crontab:
+0 2 * * * /home/oracle/run_backup.sh >> /home/oracle/backup.log 2>&1
+
+================================================================================
+7. COMMON RECOVERY SCENARIOS & SOLUTIONS
+================================================================================
+
+SCENARIO A: ACCIDENTAL TABLE DROP
+
+1. Find DROP time from audit:
+   SELECT * FROM DBA_AUDIT_TRAIL WHERE ACTION_NAME = 'DROP TABLE' 
+   AND TIMESTAMP >= SYSDATE - 1 ORDER BY TIMESTAMP DESC;
+
+2. Note time: 2024-01-15 14:22:30
+
+3. Recover 5 minutes before:
+   RMAN> SET UNTIL TIME "to_date('2024-01-15 14:17:00','YYYY-MM-DD HH24:MI:SS')";
+   RMAN> RESTORE DATABASE;
+   RMAN> RECOVER DATABASE;
+   RMAN> ALTER DATABASE OPEN RESETLOGS;
+
+4. Export recovered table to new name:
+   RMAN> EXPDP SYSTEM/password TABLES=table_name_recovered DUMPFILE=recovered.dmp
+   
+5. Copy data back to production DB
+
+---
+
+SCENARIO B: REDO LOG CORRUPTION
+
+1. Identify bad redo log:
+   SELECT GROUP#, THREAD#, SEQUENCE#, STATUS FROM V$LOG;
+   
+   OUTPUT: GROUP# 2 shows status CORRUPTED
+
+2. Clear the bad log:
+   ALTER DATABASE CLEAR LOGFILE GROUP 2;
+
+3. Force log switch:
+   ALTER SYSTEM SWITCH LOGFILE;
+
+4. Verify:
+   SELECT GROUP#, STATUS FROM V$LOG;
+
+---
+
+SCENARIO C: CONTROL FILE LOSS
+
+1. If multiple control files (recommended setup):
+   Database recovers automatically after restart
+   
+2. If single control file:
+   a) Stop database
+   b) Restore from RMAN backup:
+      RMAN> STARTUP NOMOUNT;
+      RMAN> RESTORE CONTROLFILE FROM AUTOBACKUP;
+      RMAN> ALTER DATABASE MOUNT;
+      RMAN> RECOVER DATABASE;
+      RMAN> ALTER DATABASE OPEN RESETLOGS;
+
+---
+
+SCENARIO D: TEMPFILE LOSS
+
+1. Check tempfile status:
+   SELECT FILE#, NAME, STATUS FROM V$TEMPFILE;
+   
+2. Drop and recreate:
+   ALTER TABLESPACE TEMP DROP TEMPFILE '/u01/oradata/temp01.dbf';
+   ALTER TABLESPACE TEMP ADD TEMPFILE '/u01/oradata/temp01.dbf' 
+   SIZE 100M AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED;
+
+3. Verify:
+   SELECT FILE#, NAME, STATUS FROM V$TEMPFILE;
+
+---
+
+SCENARIO E: UNDO TABLESPACE CORRUPTION
+
+1. Take undo offline:
+   ALTER SYSTEM SET UNDO_TABLESPACE='UNDOTBS2' SCOPE=BOTH;
+   ALTER TABLESPACE undotbs1 OFFLINE;
+
+2. Recover from RMAN:
+   RMAN> RESTORE TABLESPACE undotbs1;
+   RMAN> RECOVER TABLESPACE undotbs1;
+
+3. Bring online:
+   ALTER TABLESPACE undotbs1 ONLINE;
+   ALTER SYSTEM SET UNDO_TABLESPACE='UNDOTBS1' SCOPE=BOTH;
+
+================================================================================
+8. POST-RECOVERY VERIFICATION
+================================================================================
+
+MANDATORY CHECKS AFTER ANY RECOVERY:
+
+1. Database Status:
+   SELECT NAME, OPEN_MODE, LOG_MODE, DATABASE_ROLE FROM V$DATABASE;
+   
+   Expected: OPEN | READ WRITE | ARCHIVELOG | PRIMARY
+
+2. Check All Datafiles:
+   SELECT FILE#, NAME, STATUS FROM V$DATAFILE ORDER BY FILE#;
+   
+   All should show: AVAILABLE
+
+3. Check All Tablespaces:
+   SELECT TABLESPACE_NAME, STATUS FROM DBA_TABLESPACES 
+   ORDER BY TABLESPACE_NAME;
+   
+   Expected: All ONLINE (except TEMP)
+
+4. Verify No Invalid Objects:
+   SELECT OBJECT_TYPE, COUNT(*) FROM DBA_OBJECTS 
+   WHERE STATUS = 'INVALID' 
+   GROUP BY OBJECT_TYPE;
+   
+   Should return NO ROWS
+
+5. Recompile any invalid objects:
+   ALTER SESSION SET CURRENT_SCHEMA=schema_name;
+   BEGIN
+     FOR obj IN (SELECT OBJECT_NAME, OBJECT_TYPE 
+                 FROM DBA_OBJECTS 
+                 WHERE STATUS = 'INVALID' 
+                 AND OWNER = 'schema_name') 
+     LOOP
+       IF obj.OBJECT_TYPE = 'PACKAGE' THEN
+         EXECUTE IMMEDIATE 'ALTER PACKAGE ' || obj.OBJECT_NAME || ' COMPILE BODY';
+       ELSE
+         EXECUTE IMMEDIATE 'ALTER ' || obj.OBJECT_TYPE || ' ' || obj.OBJECT_NAME || ' COMPILE';
+       END IF;
+     END LOOP;
+   END;
+   /
+
+6. Verify Archive Logs:
+   SELECT COUNT(*) AS TOTAL_ARCHIVE_LOGS FROM V$ARCHIVED_LOG;
+   
+   Should have reasonable number
+
+7. Check Database Block Corruption:
+   SELECT FILE#, BLOCK# FROM V$DATABASE_BLOCK_CORRUPTION;
+   
+   Should return NO ROWS
+
+8. Run Backup Immediately:
+   RMAN> RUN {
+     ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
+     BACKUP DATABASE PLUS ARCHIVELOG;
+     RELEASE CHANNEL c1;
+   }
+
+9. Check Alert Logs:
+   $ tail -50 $ORACLE_BASE/diag/rdbms/*/*/trace/alert_*.log | grep -i error
+   
+   Should show no errors after recovery
+
+10. Test Database Functionality:
+    - Run critical application queries
+    - Verify data integrity with row counts
+    - Check expected audit logs
+    - Verify data refresh procedures
+    - Test user logins
+
+================================================================================
+TROUBLESHOOTING ISSUES
+================================================================================
+
+ISSUE: "ORACLE not available" error
+
+SOLUTION:
+$ export ORACLE_SID=pdb_name
+$ export ORACLE_HOME=/u01/oracle/product/26.0
+$ export PATH=$ORACLE_HOME/bin:$PATH
+$ sqlplus / as sysdba
+
+---
+
+ISSUE: Archive logs not found during recovery
+
+SOLUTION:
+$ find /u01/archive_logs -name "*.dbf" | head -5
+Verify archive location
+
+RMAN> CATALOG DATAFILECOPY '/u01/archive_logs/archive_5432.dbf';
+Manually register if missing
+
+SQL> SELECT NAME FROM V$ARCHIVED_LOG WHERE DELETED = 'YES';
+Check for deleted references
+
+---
+
+ISSUE: "ORA-01172: recovery of online redo log"
+
+SOLUTION:
+Database needs all redo logs to recover
+Restart recovery with clearlogfile:
+
+$ rman target /
+RMAN> STARTUP MOUNT;
+RMAN> RECOVER DATABASE UNTIL CANCEL;
+CANCEL  (when error occurs)
+RMAN> ALTER DATABASE CLEAR UNARCHIVED LOGFILE GROUP 2;
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+
+---
+
+ISSUE: Recovery very slow
+
+SOLUTION:
+Check I/O performance:
+SELECT * FROM V$IOSTAT_BY_FILETYPE;
+
+Use parallel recovery:
+RMAN> SET PARALLELISM 4;
+RMAN> RECOVER DATABASE;
+
+Check disk space:
+$ df -h
+
+Kill unnecessary processes:
+$ ps aux | grep oracle | grep -v grep
+
+---
+
+ISSUE: "Datafile check failed"
+
+SOLUTION:
+Physical corruption check:
+dbv file=/u01/oradata/users01.dbf logfile=/u01/check_users01.log
+
+Restore and recover:
+RMAN> RESTORE DATAFILE 4;
+RMAN> RECOVER DATAFILE 4;
+
+---
+
+ISSUE: Cannot open database after recovery
+
+SOLUTION:
+Check if media recovery needed:
+$ rman target /
+RMAN> RECOVER DATABASE;
+
+Reset logs if issues:
+RMAN> ALTER DATABASE OPEN RESETLOGS;
+
+Check alert log:
+$ tail -100 $ORACLE_BASE/diag/rdbms/*/*/trace/alert_*.log
+
+================================================================================
+CONTACT & SUPPORT
+================================================================================
+
+Created: January 2024
+Version: 1.0
+Oracle Database: 26AI
+
+For Oracle 26AI issues:
+- MOS (My Oracle Support): https://support.oracle.com
+- Documentation: https://docs.oracle.com
+
+Database Recovery Tips:
+1. Always test recovery procedures in test environment first
+2. Keep at least 2 control file copies
+3. Enable archivelog mode immediately after install
+4. Schedule regular full backups
+5. Monitor archive log generation space
+6. Document your RMAN configuration
+7. Test restore procedures monthly
+
+================================================================================
