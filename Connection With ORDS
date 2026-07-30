@@ -28,3 +28,10 @@
                                    ii.  sqlplus / as sysdba
                                    iii.  ALTER SESSION SET CONTAINER = HRDB;
                                     iv.  @apxchpwd.sql
+
+
+-------------Connection with taod-------------
+Open Pluggabel Database in CMD using in oracle apex 
+then create user same as schema name user and password,
+next Connect with toad;
+
