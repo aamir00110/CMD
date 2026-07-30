@@ -15,7 +15,6 @@
 		-----------IF PBDS IN MOUNT STATE-----
 12.    ALTER PLUGGABLE DATABASE FREEPDB1 OPEN;
 -------------------------------------------------STRUCTRE OF MY DATABASE------------------------------------------------
-
 					Type	Name		Status
 					CDB		FREE		Main Database
 					PDB		PDB$SEED	READ ONLY (Oracle ka template, isay use nahi karte)
@@ -28,3 +27,30 @@
 16.		ALTER SESSION SET CONTAINER=POSDB;
 17.		ALTER PLUGGABLE DATABASE POSDB OPEN;
 18.		LIST BACKUP SUMMARY;
+
+-------------------------------------------------STRUCTRE OF MY DATABASE RECOVERY------------------------------------------------
+1.		PDB Close Karna
+		ALTER PLUGGABLE DATABASE HRDB CLOSE IMMEDIATE;
+									Ye command kya karti hai?
+							HRDB PDB ko immediately band (close) kar deti hai.
+							Saare active sessions disconnect ho jate hain.
+							Database files restore ke liye ready ho jati hain.
+Verify karein
+SELECT NAME, OPEN_MODE
+FROM V$PDBS;
+
+2.		Restore
+		RMAN mein:
+		RESTORE PLUGGABLE DATABASE HRDB;
+
+3.		Database Open
+		ALTER PLUGGABLE DATABASE HRDB OPEN;
+
+
+
+
+
+
+
+
+
