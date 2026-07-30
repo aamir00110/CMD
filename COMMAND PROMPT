@@ -1,2 +1,6 @@
+SELECT NAME FROM V$SERVICES; ---
+
+
+
 ipconfig.
 tnsping DatabaseName.
