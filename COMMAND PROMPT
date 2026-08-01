@@ -1,7 +1,16 @@
 IF Database in mount state
 ALTER DATABASE OPEN RESETLOGS;
 
-
+if all database base in read write no and only do one in mount state 
+SQL> show pdbs;
+    CON_ID CON_NAME                       OPEN MODE  RESTRICTED
+---------- ------------------------------ ---------- ----------
+         2 PDB$SEED                       READ ONLY  NO
+         3 FREEPDB1                       READ WRITE NO
+         4 POSDB                          READ WRITE NO
+         5 HRDB                           READ WRITE NO
+SQL> ALTER SESSION SET CONTAINER = CDB$ROOT;
+SQL> ALTER PLUGGABLE DATABASE HRDB CLOSE IMMEDIATE;
 SELECT NAME FROM V$SERVICES; ---
 
 
