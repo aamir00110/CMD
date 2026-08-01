@@ -1,5 +1,8 @@
-SELECT NAME FROM V$SERVICES; ---
+Database in mount state
+ALTER DATABASE OPEN RESETLOGS;
 
+
+SELECT NAME FROM V$SERVICES; ---
 
 
 ipconfig.
