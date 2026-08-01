@@ -1,4 +1,4 @@
-Database in mount state
+IF Database in mount state
 ALTER DATABASE OPEN RESETLOGS;
 
 
