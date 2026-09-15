@@ -1,4 +1,6 @@
 IF Database in mount state
+ALTER USER HRDB QUOTA 500M ON SYSTEM;
+
 ALTER DATABASE OPEN RESETLOGS;
 
 if all database base in read write no and only do one in mount state 
